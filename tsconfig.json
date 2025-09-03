@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "~/*": ["./src/*"],
+      "@/*": ["emails/*"]
+    },
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "baseUrl": ".",
+    "target": "ESNext",
+    "module": "preserve",
+    "allowJs": true,
+    "noEmit": true,
+    "strict": true,
+    "jsx": "react-jsx",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedParameters": true,
+    "noUnusedLocals": true,
+    "strictNullChecks": true,
+    "exactOptionalPropertyTypes": false,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

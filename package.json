@@ -1,0 +1,49 @@
+{
+  "name": "@reliverse/relsend",
+  "version": "1.0.0",
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "pub": "rse publish",
+    "react-email": "email dev",
+    "relsend": "bun src/index.ts",
+    "latest": "bun update --latest",
+    "check": "tsc --noEmit && biome check --write --unsafe",
+    "build:css": "npx @tailwindcss/cli -i ./styles/globals.css -o ./styles/dist/output.css",
+    "build:css:watch": "npx @tailwindcss/cli -i ./styles/globals.css -o ./styles/dist/output.css --watch"
+  },
+  "dependencies": {
+    "@react-email/components": "^0.5.1",
+    "@react-email/preview-server": "4.2.8",
+    "@react-email/tailwind": "^1.2.2",
+    "@reliverse/relico": "^1.4.0",
+    "@tailwindcss/cli": "^4.1.12",
+    "cli-cursor": "^5.0.0",
+    "cli-spinners": "^3.2.0",
+    "is-interactive": "^2.0.0",
+    "is-unicode-supported": "^2.1.0",
+    "nodemailer": "^7.0.6",
+    "pretty-bytes": "^7.0.1",
+    "pretty-ms": "^9.2.0",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-email": "4.2.8",
+    "resend": "^6.0.2",
+    "stdin-discarder": "^0.2.2",
+    "string-width": "^8.1.0",
+    "strip-ansi": "^7.1.0",
+    "tailwindcss": "4.1.12"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.2",
+    "@reliverse/relparse": "^1.0.2",
+    "@reliverse/rse": "^1.7.28",
+    "@types/bun": "^1.2.21",
+    "@types/node": "^24.3.0",
+    "@types/nodemailer": "^7.0.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^5.9.2",
+    "ultracite": "^5.3.3"
+  }
+}
