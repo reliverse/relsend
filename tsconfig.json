@@ -28,6 +28,6 @@
     "exactOptionalPropertyTypes": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", "**/*.js"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,6 +1,7 @@
 import React from "react";
 import { createProvider, type ProviderConfig, type ProviderType } from "../providers";
-import { loadTemplate } from "../templates/loader";
+import { spamScannerService } from "../services/spam-scanner";
+import { findTemplateVariants, loadTemplate, selectRandomTemplate } from "../templates/loader";
 import { renderTemplate } from "../templates/renderer";
 import type { TemplateData } from "../templates/types";
 import { loadConfig } from "../utils/config";
@@ -17,10 +18,16 @@ type SendOptions = {
   // Template options
   template?: string;
   templateData?: string;
+  multiTemplate?: boolean;
   // Tailwind mode
   tailwind?: "v3" | "v4" | "off";
   // Provider selection
   provider?: ProviderType;
+  // Preview mode
+  preview?: boolean;
+  // Spam scanning
+  scan?: boolean;
+  forceScan?: boolean;
   // SMTP config (for nodemailer)
   host?: string;
   port?: number;
@@ -61,9 +68,28 @@ export async function sendCommand(args: string[]): Promise<void> {
     try {
       templateSpinner.start();
 
-      const template = await loadTemplate(resolved.template);
+      let templateName = resolved.template;
+      let template = await loadTemplate(templateName);
+
+      // If multi-template is enabled, always look for variants (even if base template exists)
+      if (resolved.multiTemplate) {
+        const variants = await findTemplateVariants(resolved.template);
+        if (variants.totalCount > 0) {
+          templateName = selectRandomTemplate(variants.variants);
+          template = await loadTemplate(templateName);
+          templateSpinner.text = `Loading random template variant '${templateName}' (${variants.totalCount} variants found)...`;
+        } else if (!template) {
+          // If no variants found and no base template, show error
+          templateSpinner.fail(`Template '${resolved.template}' and its variants not found`);
+          return;
+        }
+      }
+
       if (!template) {
-        templateSpinner.fail(`Template '${resolved.template}' not found`);
+        const errorMsg = resolved.multiTemplate
+          ? `Template '${resolved.template}' and its variants not found`
+          : `Template '${resolved.template}' not found`;
+        templateSpinner.fail(errorMsg);
         return;
       }
 
@@ -94,13 +120,122 @@ export async function sendCommand(args: string[]): Promise<void> {
         reactComponent = React.createElement(template.component, mergedData);
       }
 
-      templateSpinner.succeed(`Template '${resolved.template}' loaded and rendered`);
+      const successMsg =
+        resolved.multiTemplate && templateName !== resolved.template
+          ? `Template variant '${templateName}' loaded and rendered (from ${resolved.template} variants)`
+          : `Template '${templateName}' loaded and rendered`;
+      templateSpinner.succeed(successMsg);
     } catch (error) {
       templateSpinner.fail(
         `Failed to load template: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
       throw error;
     }
+  }
+
+  // Spam scanning (if enabled)
+  if (resolved.scan && (finalText || finalHtml || reactComponent)) {
+    const scanSpinner = createSpinner({
+      text: "Scanning email content for spam...",
+      color: "yellow",
+      spinner: "dots",
+    });
+
+    try {
+      scanSpinner.start();
+
+      // Create email content for scanning
+      let emailContent = "";
+      if (finalText && finalHtml) {
+        emailContent =
+          `Subject: ${finalSubject || "No Subject"}\r\n` +
+          `From: ${resolved.from || "sender@example.com"}\r\n` +
+          `To: ${resolved.to || "recipient@example.com"}\r\n` +
+          `Date: ${new Date().toUTCString()}\r\n` +
+          "MIME-Version: 1.0\r\n" +
+          `Content-Type: multipart/alternative; boundary="boundary123"\r\n\r\n` +
+          "--boundary123\r\n" +
+          "Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+          `${finalText}\r\n\r\n` +
+          "--boundary123\r\n" +
+          "Content-Type: text/html; charset=utf-8\r\n\r\n" +
+          `${finalHtml}\r\n\r\n` +
+          "--boundary123--";
+      } else if (finalHtml) {
+        emailContent =
+          `Subject: ${finalSubject || "No Subject"}\r\n` +
+          `From: ${resolved.from || "sender@example.com"}\r\n` +
+          `To: ${resolved.to || "recipient@example.com"}\r\n` +
+          `Date: ${new Date().toUTCString()}\r\n` +
+          "MIME-Version: 1.0\r\n" +
+          "Content-Type: text/html; charset=utf-8\r\n\r\n" +
+          finalHtml;
+      } else if (finalText) {
+        emailContent =
+          `Subject: ${finalSubject || "No Subject"}\r\n` +
+          `From: ${resolved.from || "sender@example.com"}\r\n` +
+          `To: ${resolved.to || "recipient@example.com"}\r\n` +
+          `Date: ${new Date().toUTCString()}\r\n` +
+          "MIME-Version: 1.0\r\n" +
+          "Content-Type: text/plain; charset=utf-8\r\n\r\n" +
+          finalText;
+      }
+
+      const templatePath = resolved.template ? `./emails/${resolved.template}.tsx` : undefined;
+      const scanResult = await spamScannerService.scanEmail(
+        emailContent,
+        templatePath,
+        resolved.forceScan,
+      );
+
+      if (scanResult.isSpam) {
+        scanSpinner.fail(`Spam detected: ${scanResult.message}`);
+        console.error("\n❌ EMAIL BLOCKED - SPAM DETECTED");
+        console.error("=".repeat(50));
+        console.error(`Reason: ${scanResult.message}`);
+
+        // Show detailed results
+        if (scanResult.results.phishing.length > 0) {
+          console.error(`Phishing threats: ${scanResult.results.phishing.length}`);
+        }
+        if (scanResult.results.executables.length > 0) {
+          console.error(`Executable files: ${scanResult.results.executables.length}`);
+        }
+        if (scanResult.results.macros.length > 0) {
+          console.error(`Macros detected: ${scanResult.results.macros.length}`);
+        }
+        if (scanResult.results.viruses.length > 0) {
+          console.error(`Viruses detected: ${scanResult.results.viruses.length}`);
+        }
+        // Note: NSFW and toxicity detection are not enabled in the current configuration
+        if (scanResult.results.patterns.length > 0) {
+          console.error(`Suspicious patterns: ${scanResult.results.patterns.length}`);
+        }
+
+        console.error("\nUse --force-scan to bypass spam detection");
+        process.exit(1);
+      } else {
+        scanSpinner.succeed("Email content appears clean");
+      }
+    } catch (error) {
+      scanSpinner.fail(
+        `Spam scan failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+      throw error;
+    }
+  }
+
+  // If preview mode, skip validation and show preview
+  if (resolved.preview) {
+    await showPreview({
+      from: resolved.from || "preview@example.com",
+      to: resolved.to || "recipient@example.com",
+      subject: finalSubject || "Preview Subject",
+      text: finalText,
+      html: finalHtml,
+      react: reactComponent,
+    });
+    return;
   }
 
   const missing: string[] = [];
@@ -212,7 +347,19 @@ function parseArgs(args: string[]): SendOptions {
     else if (a === "--apiKey" && args[i + 1]) out.apiKey = args[++i];
     else if (a === "--template" && args[i + 1]) out.template = args[++i];
     else if (a === "--templateData" && args[i + 1]) out.templateData = args[++i];
-    else if (a === "--tailwind" && args[i + 1]) {
+    else if (a === "--multi-template") {
+      const value = args[i + 1];
+      if (value === "true") {
+        out.multiTemplate = true;
+        i++; // Skip the next argument since we consumed it
+      } else if (value === "false") {
+        out.multiTemplate = false;
+        i++; // Skip the next argument since we consumed it
+      } else {
+        // If no value provided, default to true
+        out.multiTemplate = true;
+      }
+    } else if (a === "--tailwind" && args[i + 1]) {
       const mode = args[++i] as "v3" | "v4" | "off";
       if (["v3", "v4", "off"].includes(mode)) {
         out.tailwind = mode;
@@ -220,6 +367,12 @@ function parseArgs(args: string[]): SendOptions {
         console.error(`Invalid tailwind mode: ${mode}. Must be one of: v3, v4, off`);
         process.exit(1);
       }
+    } else if (a === "--preview") {
+      out.preview = true;
+    } else if (a === "--scan") {
+      out.scan = true;
+    } else if (a === "--force-scan") {
+      out.forceScan = true;
     }
   }
   return out;
@@ -235,9 +388,9 @@ function withEnvFallback(o: SendOptions): SendOptions {
     if (user) accounts.push({ index: idx, user, pass });
   }
 
-  // Validate and resolve --from:
+  // Validate and resolve --from (skip validation in preview mode):
   let resolvedFrom = o.from;
-  if (resolvedFrom) {
+  if (resolvedFrom && !o.preview) {
     if (resolvedFrom === "random") {
       if (accounts.length === 0) {
         console.error(
@@ -291,4 +444,51 @@ function withEnvFallback(o: SendOptions): SendOptions {
     refreshToken: o.refreshToken ?? env.RELSEND_REFRESH_TOKEN,
     apiKey: o.apiKey ?? env.RELSEND_API_KEY,
   };
+}
+
+type PreviewOptions = {
+  from: string;
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  react?: React.ReactElement;
+};
+
+async function showPreview(options: PreviewOptions): Promise<void> {
+  console.log("\n📧 EMAIL PREVIEW");
+  console.log("=".repeat(50));
+  console.log(`From: ${options.from}`);
+  console.log(`To: ${options.to}`);
+  console.log(`Subject: ${options.subject}`);
+  console.log("=".repeat(50));
+
+  // Handle React component rendering
+  let finalHtml = options.html;
+  if (options.react && !finalHtml) {
+    const { render } = await import("@react-email/components");
+    finalHtml = await render(options.react);
+  }
+
+  if (options.text) {
+    console.log("\n📝 PLAIN TEXT CONTENT:");
+    console.log("-".repeat(30));
+    console.log(options.text);
+  }
+
+  if (finalHtml) {
+    console.log("\n🌐 HTML CONTENT:");
+    console.log("-".repeat(30));
+    console.log(finalHtml);
+  }
+
+  if (options.react && !finalHtml) {
+    console.log("\n⚛️  REACT COMPONENT:");
+    console.log("-".repeat(30));
+    console.log("React component will be rendered to HTML by the provider");
+  }
+
+  console.log("\n" + "=".repeat(50));
+  console.log("✅ Preview complete - no email was sent");
+  console.log("Remove --preview flag to actually send the email");
 }

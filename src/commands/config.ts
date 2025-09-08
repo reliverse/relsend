@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { createSpinner } from "../utils/spinner/mod";
 
 type SettingsKey =

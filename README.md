@@ -143,10 +143,10 @@ bun relsend send --template my-email --tailwind off --templateData '{"userName":
 
 ```bash
 # Using Nodemailer
-bun relsend send --template medical-appeal --to "hello-to@gmail.com" --from 1
+bun relsend send --template newsletter --to "hello-to@gmail.com" --from 1
 
 # Using Resend
-bun relsend send --provider resend --template medical-appeal --to "hello-to@gmail.com" --from 1
+bun relsend send --provider resend --template newsletter --to "hello-to@gmail.com" --from 1
 ```
 
 ### Send Simple Email (No Template)
@@ -264,7 +264,7 @@ Relsend supports multiple Tailwind CSS modes for flexible email styling:
   - Features: Complete control over styling
   - Requires: Manual CSS file management
 
-### Usage
+### Usage Example
 
 ```bash
 # Default mode (react-email Tailwind)
@@ -336,3 +336,75 @@ Using `.env` files provides several advantages:
 - ✅ **Zero Dependencies** - Uses Bun's native environment variable support
 - ✅ **Visual Feedback** - Beautiful spinners for all operations
 - ✅ **Provider Flexibility** - Switch between providers with `--provider` flag
+
+## Nerd Details
+
+### 🔍 What Nodemailer Receives (Your Input)
+
+```json
+{
+  from: "sender@example.com",
+  to: "recipient@example.com", 
+  subject: "Test Email",
+  text: "Plain text version",
+  html: "<h1>HTML version</h1>"
+}
+```
+
+### 📧 What Nodemailer Actually Sends (Raw Email)
+
+```bash
+MIME-Version: 1.0
+From: sender@example.com
+To: recipient@example.com
+Subject: Test Email
+Date: Sun, 07 Sep 2025 18:59:05 GMT
+Message-ID: <unique-id@domain>
+Content-Type: multipart/alternative; boundary="----=_NextPart_000_0000_01DA1234567890"
+
+------=_NextPart_000_0000_01DA1234567890
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Plain text version
+
+------=_NextPart_000_0000_01DA1234567890
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<h1>HTML version</h1>
+
+------=_NextPart_000_0000_01DA1234567890--
+```
+
+### **Key Points:**
+
+1. **MIME Multipart Structure**: Nodemailer creates a structured email with multiple parts separated by boundary markers
+2. **Both Text & HTML**: When provided both, it includes both versions
+3. **Email Headers**: Adds standard email headers (Date, Message-ID, Content-Type, etc.)
+4. **Encoding**: Handles character encoding and transfer encoding
+5. **Fallback Support**: Email clients can choose which version to display
+
+### **Relsend CLI's Preview Shows:**
+
+- **The content parts** that will be sent (text and HTML separately)
+- **Not the raw MIME structure** (that's nodemailer's job)
+- **React components rendered to HTML** before sending
+- **Exactly what the recipient will see** in their email client
+
+### **How Email Clients Handle It:**
+
+- **Modern clients** (Gmail, Outlook, Apple Mail): Display the HTML version
+- **Text-only clients** (some mobile apps, accessibility tools): Show the plain text
+- **"Show Original"** in Gmail: Shows the raw MIME structure
+- **Fallback behavior**: If HTML fails to load, falls back to plain text
+
+## Contributors
+
+We welcome contributions! 👋
+
+## License
+
+This project is licensed under the Apache-2.0 License
+Copyright (c) 2025 Nazar Kornienko (blefnk), Bleverse, Reliverse
+See the [LICENSE](./LICENSE) and [NOTICE](./NOTICE) files for more information.

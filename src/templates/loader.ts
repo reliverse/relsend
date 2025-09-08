@@ -1,5 +1,5 @@
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir } from "fs/promises";
+import { join } from "path";
 import { extractTSXVariables } from "./tsx-renderer";
 import type { AnyEmailTemplate } from "./types";
 import { isTSXTemplate } from "./types";
@@ -115,6 +115,65 @@ export async function getTemplateInfo(
 
   const variables = extractVariables(template);
   return { template, variables };
+}
+
+/**
+ * Finds all template variants matching the pattern: {baseName}-{number}
+ * Returns the base name and all found variants
+ */
+export async function findTemplateVariants(baseName: string): Promise<{
+  baseName: string;
+  variants: string[];
+  totalCount: number;
+}> {
+  try {
+    const files = await readdir(TEMPLATES_DIR);
+    const variantPattern = new RegExp(`^${baseName}-(\\d+)\\.(ts|tsx)$`);
+
+    const variants: string[] = [];
+    const variantNumbers: number[] = [];
+
+    for (const file of files) {
+      const match = file.match(variantPattern);
+      if (match) {
+        const variantNumber = Number.parseInt(match[1] || "0", 10);
+        const variantName = file.replace(EXTENSION_REGEX, "");
+        variants.push(variantName);
+        variantNumbers.push(variantNumber);
+      }
+    }
+
+    // Sort by variant number to ensure consistent ordering
+    variants.sort((a, b) => {
+      const aNum = Number.parseInt(a.split("-").pop() || "0", 10);
+      const bNum = Number.parseInt(b.split("-").pop() || "0", 10);
+      return aNum - bNum;
+    });
+
+    return {
+      baseName,
+      variants,
+      totalCount: variants.length,
+    };
+  } catch {
+    return {
+      baseName,
+      variants: [],
+      totalCount: 0,
+    };
+  }
+}
+
+/**
+ * Randomly selects one template from a list of variants
+ */
+export function selectRandomTemplate(variants: string[]): string {
+  if (variants.length === 0) {
+    throw new Error("No template variants found");
+  }
+
+  const randomIndex = Math.floor(Math.random() * variants.length);
+  return variants[randomIndex] || "";
 }
 
 function extractVariables(template: AnyEmailTemplate): string[] {

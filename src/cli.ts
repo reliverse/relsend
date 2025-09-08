@@ -29,6 +29,11 @@ export async function run(args: string[]): Promise<void> {
       await templateCommand(rest);
       return;
     }
+    case "scan": {
+      const { scanCommand } = await import("./commands/scan");
+      await scanCommand(rest);
+      return;
+    }
     default: {
       console.error(`Unknown command: ${command}`);
       printHelp();

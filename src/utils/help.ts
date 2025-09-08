@@ -11,6 +11,7 @@ Commands:
   send                      Send an email via SMTP
   config <get|set>          Read or update SQLite-based configuration
   template <list|info>      Manage email templates
+  scan                      Scan email content for spam and security threats
 
 Send options:
   --to <email>              Recipient
@@ -45,7 +46,11 @@ Send options:
   Template options:
   --template <name>         Use email template from ./emails/
   --templateData <json>     JSON data for template variables
+  --multi-template [true|false] Use random template variant (e.g., newsletter-1.tsx, newsletter-2.tsx)
   --tailwind <mode>         Tailwind mode: v3 (react-email, default), v4 (manual CSS), off (no CSS)
+  --preview                 Preview email content without sending
+  --scan                    Scan email content for spam before sending
+  --force-scan              Force spam scan even if cached result exists
  
 
 Examples:
@@ -77,12 +82,30 @@ Examples:
   bun relsend send --template my-email --tailwind v4 --to user@example.com --from sender@example.com
   bun relsend send --template my-email --tailwind off --to user@example.com --from sender@example.com
   
+  # Using multi-template system (randomly selects from newsletter-1.tsx, newsletter-2.tsx, etc.)
+  bun relsend send --template newsletter --multi-template true --to user@example.com --from sender@example.com
+  
+  # Preview email content without sending
+  bun relsend send --preview --template welcome --templateData '{"userName":"John"}' --to user@example.com --from sender@example.com
+  bun relsend send --preview --subject "Test" --text "Hello World" --html "<h1>Hello</h1>" --to user@example.com --from sender@example.com
+  
+  # Send with spam scanning
+  bun relsend send --template welcome --templateData '{"userName":"John"}' --to user@example.com --from sender@example.com --scan
+  bun relsend send --subject "Test" --text "Hello World" --to user@example.com --from sender@example.com --scan
+  
  
 
 Template management:
   bun relsend template list
   bun relsend template info welcome
   bun relsend template info notification
+
+Spam scanning:
+  bun relsend scan --template welcome --templateData '{"userName":"John"}'
+  bun relsend scan --content "Subject: Test\n\nHello World"
+  bun relsend scan --template newsletter --force-rescan
+  bun relsend scan --clear-cache
+  bun relsend scan --cache-stats
 
 Config (SQLite):
   bun relsend config get

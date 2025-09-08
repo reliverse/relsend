@@ -11,7 +11,7 @@ export default defineConfig({
   projectAuthor: "reliverse",
   projectDescription:
     "Modern CLI for sending emails with TypeScript template support, built with Bun. Supports multiple email providers including Nodemailer (SMTP) and Resend.",
-  version: "1.0.2",
+  version: "1.0.1",
   projectLicense: "Apache-2.0",
   projectState: "created",
   projectRepository: "unknown",
