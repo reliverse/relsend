@@ -1,6 +1,6 @@
 # Tailwind CSS v4 Setup
 
-This directory contains the Tailwind CSS v4 configuration and compiled output for the relsend CLI tool.
+This directory contains the Tailwind CSS v4 configuration and compiled output for the Relsend CLI tool.
 
 ## Files
 

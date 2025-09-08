@@ -1,5 +1,5 @@
 import { spamScannerService } from "../services/spam-scanner";
-import { loadTemplate } from "../templates/loader";
+import { listTemplates, loadTemplate } from "../templates/loader";
 import { renderTemplate } from "../templates/renderer";
 import type { TemplateData } from "../templates/types";
 import { createSpinner } from "../utils/spinner/mod";
@@ -13,6 +13,7 @@ type ScanOptions = {
   forceRescan?: boolean;
   clearCache?: boolean;
   cacheStats?: boolean;
+  all?: boolean;
 };
 
 export async function scanCommand(args: string[]): Promise<void> {
@@ -41,6 +42,99 @@ export async function scanCommand(args: string[]): Promise<void> {
 
   let content: string;
   let templatePath: string | undefined;
+
+  // Scan all templates in ./emails when --all is provided
+  if (options.all) {
+    const templates = await listTemplates();
+    if (templates.length === 0) {
+      console.log("No templates found in ./emails");
+      return;
+    }
+
+    console.log(`Scanning all templates in ./emails (count: ${templates.length})...`);
+
+    let total = 0;
+    let spamCount = 0;
+    const failed: string[] = [];
+
+    for (const name of templates) {
+      total++;
+      const spinner = createSpinner({
+        text: `Rendering template '${name}'...`,
+        color: "blue",
+        spinner: "dots",
+      });
+
+      try {
+        spinner.start();
+        const template = await loadTemplate(name);
+        if (!template) {
+          spinner.fail(`Template '${name}' not found`);
+          failed.push(name);
+          continue;
+        }
+
+        let parsedData: TemplateData = {};
+        if (options.templateData) {
+          try {
+            parsedData = JSON.parse(options.templateData);
+          } catch {
+            spinner.fail("Invalid JSON in --templateData");
+            failed.push(name);
+            continue;
+          }
+        }
+
+        const defaultData =
+          (template as unknown as { defaultData?: TemplateData }).defaultData ?? {};
+        const mergedData: TemplateData = { ...defaultData, ...parsedData };
+        const rendered = await renderTemplate(template, mergedData, options.tailwind);
+
+        const emailContent = createEmailContent(rendered.subject, rendered.text, rendered.html);
+        const tplPath = `./emails/${name}.tsx`;
+        spinner.succeed(`Template '${name}' rendered`);
+
+        const scanSpinner = createSpinner({
+          text: `Scanning '${name}' for spam...`,
+          color: "yellow",
+          spinner: "dots",
+        });
+
+        scanSpinner.start();
+        const result = await spamScannerService.scanEmail(
+          emailContent,
+          tplPath,
+          options.forceRescan,
+        );
+        scanSpinner.succeed(`Scan completed for '${name}'`);
+
+        if (result.isSpam) {
+          spamCount++;
+          console.log(`❌ ${name}: SPAM DETECTED — ${result.message}`);
+        } else {
+          console.log(`✅ ${name}: clean`);
+        }
+      } catch (error) {
+        spinner.fail(
+          `Failed processing '${name}': ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+        failed.push(name);
+      }
+    }
+
+    console.log("\n" + "=".repeat(50));
+    console.log(
+      `Scanned: ${total}, Clean: ${total - spamCount - failed.length}, Spam: ${spamCount}, Failed: ${failed.length}`,
+    );
+    if (failed.length > 0) {
+      console.log(`Failed templates: ${failed.join(", ")}`);
+    }
+
+    if (spamCount > 0 || failed.length > 0) {
+      process.exit(1);
+    }
+    return;
+  }
 
   if (options.template) {
     // Scan a template
@@ -257,6 +351,7 @@ function parseArgs(args: string[]): ScanOptions {
     } else if (a === "--force-rescan") out.forceRescan = true;
     else if (a === "--clear-cache") out.clearCache = true;
     else if (a === "--cache-stats") out.cacheStats = true;
+    else if (a === "--all") out.all = true;
   }
 
   return out;

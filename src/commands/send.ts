@@ -1,3 +1,6 @@
+import { constants as FS_CONSTANTS } from "node:fs";
+import { access, readFile } from "node:fs/promises";
+import pMap from "p-map";
 import React from "react";
 import { createProvider, type ProviderConfig, type ProviderType } from "../providers";
 import { spamScannerService } from "../services/spam-scanner";
@@ -19,6 +22,12 @@ type SendOptions = {
   template?: string;
   templateData?: string;
   multiTemplate?: boolean;
+  // Send all templates in ./emails
+  all?: boolean;
+  // Base delay (seconds) between emails when using --all (default 2s)
+  delay?: number;
+  // Optional CSV path providing recipient emails
+  emailsCsv?: string;
   // Tailwind mode
   tailwind?: "v3" | "v4" | "off";
   // Provider selection
@@ -42,16 +51,7 @@ type SendOptions = {
   apiKey?: string;
 };
 
-export async function sendCommand(args: string[]): Promise<void> {
-  const options = parseArgs(args);
-
-  const base = withEnvFallback(options);
-  const cfg = await loadConfig();
-  const resolved = {
-    ...cfg,
-    ...base,
-  } as SendOptions;
-
+async function performSend(resolved: SendOptions): Promise<void> {
   // Handle template rendering
   let finalSubject = resolved.subject;
   let finalText = resolved.text;
@@ -239,7 +239,12 @@ export async function sendCommand(args: string[]): Promise<void> {
   }
 
   const missing: string[] = [];
-  if (!resolved.to) missing.push("--to");
+  if (!resolved.to) {
+    // Allow CSV-driven mode to bypass required --to (handled earlier)
+    if (!(resolved as unknown as { emailsCsv?: string }).emailsCsv) {
+      missing.push("--to");
+    }
+  }
   if (!resolved.from) missing.push("--from");
   if (!finalSubject) missing.push("--subject or --template");
   if (!(finalText || finalHtml || reactComponent)) missing.push("--text/--html or --template");
@@ -302,7 +307,7 @@ export async function sendCommand(args: string[]): Promise<void> {
     });
 
     if (result.success) {
-      spinner.succeed(`Email sent successfully via ${provider}! Message ID: ${result.messageId}`);
+      spinner.succeed(`Email sent successfully!`);
       console.log(JSON.stringify({ ok: true, messageId: result.messageId, provider }, null, 2));
     } else {
       spinner.fail(`Failed to send email via ${provider}: ${result.error}`);
@@ -314,6 +319,229 @@ export async function sendCommand(args: string[]): Promise<void> {
     );
     throw error;
   }
+}
+
+export async function sendCommand(args: string[]): Promise<void> {
+  const options = parseArgs(args);
+  const requestedCsv = options.emailsCsv !== undefined;
+  let csvPath: string | null = null;
+  if (requestedCsv) {
+    csvPath = await resolveCsvPath(options.emailsCsv);
+  } else if (!options.to) {
+    // Only fall back to default emails.csv when --to is not provided
+    csvPath = await resolveCsvPath(undefined);
+  }
+  if (csvPath) {
+    const recipients = await readEmailsFromCsv(csvPath);
+    if (recipients.length === 0) {
+      console.error(`No emails found in ${csvPath}`);
+      return;
+    }
+
+    const { listTemplates, findTemplateVariants } = await import("../templates/loader");
+    // Build template pool based on flags
+    let templatePool: string[] = [];
+    if (options.template && options.multiTemplate) {
+      const variants = await findTemplateVariants(options.template);
+      templatePool = variants.totalCount > 0 ? variants.variants : [options.template];
+    } else if (options.template) {
+      templatePool = [options.template];
+    } else {
+      templatePool = await listTemplates();
+    }
+
+    if (templatePool.length === 0) {
+      console.error("No templates found in ./emails to use with --emails-csv");
+      return;
+    }
+
+    const env = process.env as Record<string, string | undefined>;
+    const accounts: Array<{ index: number; user: string; pass?: string }> = [];
+    for (let idx = 1; idx <= 10; idx++) {
+      const user = env[`RELSEND_USER_NAME_${idx}`];
+      const pass = env[`RELSEND_USER_PASS_${idx}`];
+      if (user) accounts.push({ index: idx, user, pass });
+    }
+    if (accounts.length === 0) {
+      console.error("No RELSEND_USER_NAME_<i> accounts configured in environment.");
+      process.exit(1);
+    }
+
+    type CsvTask = { to: string; from: string; template: string };
+    const tasks: CsvTask[] = [];
+    // Shuffle template pool (Fisher-Yates)
+    for (let i = templatePool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = templatePool[i] || "";
+      templatePool[i] = templatePool[j] || templatePool[i] || "";
+      templatePool[j] = tmp;
+    }
+
+    for (let i = 0; i < recipients.length; i++) {
+      const to = recipients[i] || "";
+      const pickAcct = Math.floor(Math.random() * accounts.length);
+      const from = accounts[pickAcct]?.user || accounts[0]?.user || "";
+      const template = templatePool[i % templatePool.length] || templatePool[0] || "";
+      tasks.push({ to, from, template });
+    }
+
+    const byAccount = new Map<string, CsvTask[]>();
+    for (const t of tasks) {
+      const list = byAccount.get(t.from);
+      if (list) list.push(t);
+      else byAccount.set(t.from, [t]);
+    }
+
+    const baseDelayMs = Math.max(0, Math.floor(((options.delay ?? 2) as number) * 1000));
+
+    let total = 0;
+    const failed: string[] = [];
+
+    await pMap(
+      Array.from(byAccount.entries()),
+      async ([accountEmail, queue]) => {
+        let sentForAccount = 0;
+        for (let i = 0; i < queue.length; i++) {
+          const { to, template } = queue[i] || { to: "", template: "" };
+          total++;
+          try {
+            const perEmailOptions: SendOptions = {
+              ...options,
+              template,
+              from: accountEmail,
+              all: false,
+            };
+            const base = withEnvFallback(perEmailOptions);
+            const cfg = await loadConfig();
+            const resolved = { ...cfg, ...base, to } as SendOptions;
+            await performSend(resolved);
+            sentForAccount++;
+          } catch (error) {
+            console.error(
+              `❌ Failed to send to '${to}' from '${accountEmail}': ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+            failed.push(to);
+          }
+
+          const isLast = i === queue.length - 1;
+          if (!isLast) {
+            const afterSeven = sentForAccount > 0 && sentForAccount % 7 === 0;
+            const waitMs = afterSeven ? baseDelayMs + 8000 : baseDelayMs;
+            if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+          }
+        }
+      },
+      { concurrency: byAccount.size },
+    );
+
+    console.log("\n" + "=".repeat(50));
+    console.log(`Attempted: ${total}, Sent: ${total - failed.length}, Failed: ${failed.length}`);
+    if (failed.length > 0) {
+      console.log(`Failed recipients: ${failed.join(", ")}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (options.all) {
+    const { listTemplates } = await import("../templates/loader");
+    const templates = await listTemplates();
+    if (templates.length === 0) {
+      console.log("No templates found in ./emails");
+      return;
+    }
+
+    console.log(`Sending all templates in ./emails (count: ${templates.length})...`);
+
+    // Resolve configured accounts from env
+    const env = process.env as Record<string, string | undefined>;
+    const accounts: Array<{ index: number; user: string; pass?: string }> = [];
+    for (let idx = 1; idx <= 10; idx++) {
+      const user = env[`RELSEND_USER_NAME_${idx}`];
+      const pass = env[`RELSEND_USER_PASS_${idx}`];
+      if (user) accounts.push({ index: idx, user, pass });
+    }
+    if (accounts.length === 0) {
+      console.error("No RELSEND_USER_NAME_<i> accounts configured in environment.");
+      process.exit(1);
+    }
+
+    // Precompute random assignment: template -> account email
+    const assignment = new Map<string, string>();
+    for (const name of templates) {
+      const pick = Math.floor(Math.random() * accounts.length);
+      assignment.set(name, accounts[pick]?.user || accounts[0]?.user || "");
+    }
+
+    // Group templates by assigned account
+    const byAccount = new Map<string, string[]>();
+    for (const [tpl, acct] of assignment) {
+      const list = byAccount.get(acct);
+      if (list) list.push(tpl);
+      else byAccount.set(acct, [tpl]);
+    }
+
+    const baseDelayMs = Math.max(0, Math.floor(((options.delay ?? 2) as number) * 1000));
+
+    let total = 0;
+    const failed: string[] = [];
+
+    // Run each account queue concurrently; each account enforces its own delays
+    await pMap(
+      Array.from(byAccount.entries()),
+      async ([accountEmail, tplList]) => {
+        let sentForAccount = 0;
+        for (let i = 0; i < tplList.length; i++) {
+          const name = tplList[i] || "";
+          total++;
+          try {
+            const perEmailOptions: SendOptions = {
+              ...options,
+              template: name,
+              from: accountEmail,
+              all: false,
+            };
+            const base = withEnvFallback(perEmailOptions);
+            const cfg = await loadConfig();
+            const resolved = { ...cfg, ...base } as SendOptions;
+            await performSend(resolved);
+            sentForAccount++;
+          } catch (error) {
+            console.error(
+              `❌ Failed to send template '${name}' from '${accountEmail}': ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+            failed.push(name);
+          }
+
+          // per-account delay cadence
+          const isLast = i === tplList.length - 1;
+          if (!isLast) {
+            const afterSeven = sentForAccount > 0 && sentForAccount % 7 === 0;
+            const waitMs = afterSeven ? baseDelayMs + 8000 : baseDelayMs;
+            if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+          }
+        }
+      },
+      { concurrency: byAccount.size },
+    );
+
+    console.log("\n" + "=".repeat(50));
+    console.log(`Attempted: ${total}, Sent: ${total - failed.length}, Failed: ${failed.length}`);
+    if (failed.length > 0) {
+      console.log(`Failed templates: ${failed.join(", ")}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  const base = withEnvFallback(options);
+  const cfg = await loadConfig();
+  const resolved = {
+    ...cfg,
+    ...base,
+  } as SendOptions;
+
+  await performSend(resolved);
 }
 
 function parseArgs(args: string[]): SendOptions {
@@ -373,7 +601,33 @@ function parseArgs(args: string[]): SendOptions {
       out.scan = true;
     } else if (a === "--force-scan") {
       out.forceScan = true;
+    } else if (a === "--all") {
+      const value = args[i + 1];
+      if (value === "true") {
+        out.all = true;
+        i++;
+      } else if (value === "false") {
+        out.all = false;
+        i++;
+      } else {
+        // If no value provided, default to true
+        out.all = true;
+      }
+    } else if (a === "--delay" && args[i + 1]) {
+      const n = Number(args[++i]);
+      if (Number.isFinite(n) && n >= 0) out.delay = n;
+    } else if (a === "--emails-csv") {
+      const next = args[i + 1];
+      if (next && !next.startsWith("--")) {
+        out.emailsCsv = args[++i];
+      } else {
+        out.emailsCsv = "emails.csv";
+      }
     }
+  }
+  // If multi-template is enabled and --all not explicitly set, default to true
+  if (out.multiTemplate === true && out.all === undefined) {
+    out.all = true;
   }
   return out;
 }
@@ -390,6 +644,20 @@ function withEnvFallback(o: SendOptions): SendOptions {
 
   // Validate and resolve --from (skip validation in preview mode):
   let resolvedFrom = o.from;
+  // Auto-resolve when --from is omitted:
+  const shouldAutoResolveFrom = resolvedFrom === undefined && o.preview !== true;
+  if (shouldAutoResolveFrom) {
+    // Prefer explicit default from env
+    const defaultFrom = env.RELSEND_DEFAULT_FROM;
+    if (defaultFrom) {
+      resolvedFrom = defaultFrom;
+    } else if (accounts.length >= 1) {
+      // If accounts are configured, pick one at random
+      const pickIndex = Math.floor(Math.random() * accounts.length);
+      resolvedFrom = accounts[pickIndex]?.user ?? accounts[0]?.user;
+    }
+  }
+
   if (resolvedFrom && !o.preview) {
     if (resolvedFrom === "random") {
       if (accounts.length === 0) {
@@ -491,4 +759,36 @@ async function showPreview(options: PreviewOptions): Promise<void> {
   console.log("\n" + "=".repeat(50));
   console.log("✅ Preview complete - no email was sent");
   console.log("Remove --preview flag to actually send the email");
+}
+
+async function resolveCsvPath(input?: string): Promise<string | null> {
+  const path = input || "emails.csv";
+  try {
+    await access(path, FS_CONSTANTS.F_OK);
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+async function readEmailsFromCsv(path: string): Promise<string[]> {
+  const raw = await readFile(path, "utf-8");
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return [];
+
+  const header = lines[0] || "";
+  const headers = header.split(",").map((h) => h.trim().toLowerCase());
+  const emailIdx = headers.indexOf("email");
+  if (emailIdx === -1) {
+    throw new Error(`CSV '${path}' must include 'email' column`);
+  }
+
+  const out: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i] || "";
+    const cells = row.split(",");
+    const email = (cells[emailIdx] || "").trim();
+    if (email) out.push(email);
+  }
+  return out;
 }

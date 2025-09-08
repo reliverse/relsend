@@ -16,7 +16,7 @@
     "@react-email/components": "^0.5.2",
     "@react-email/preview-server": "4.2.8",
     "@react-email/tailwind": "^1.2.2",
-    "@reliverse/ohmymsg": "^1.0.1",
+    "@reliverse/ohmymsg": "^1.0.2",
     "@reliverse/relico": "^1.4.0",
     "@tailwindcss/cli": "^4.1.13",
     "cli-cursor": "^5.0.0",
@@ -29,10 +29,11 @@
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "react-email": "4.2.8",
-    "resend": "^6.0.2",
+    "p-map": "^7.0.3",
+    "resend": "^6.0.3",
     "stdin-discarder": "^0.2.2",
     "string-width": "^8.1.0",
-    "strip-ansi": "^7.1.0",
+    "strip-ansi": "^7.1.2",
     "tailwindcss": "4.1.13"
   },
   "devDependencies": {
