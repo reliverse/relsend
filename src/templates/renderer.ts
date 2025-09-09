@@ -36,7 +36,7 @@ export const renderTemplate: TemplateRenderer = async (
 
     return {
       subject: renderString(template.subject),
-      text: renderString(template.text),
+      text: typeof template.text === "string" ? renderString(template.text) : undefined,
       html,
     };
   }
@@ -44,7 +44,7 @@ export const renderTemplate: TemplateRenderer = async (
   // Handle string-based templates
   return {
     subject: renderString(template.subject),
-    text: renderString(template.text),
+    text: typeof template.text === "string" ? renderString(template.text) : undefined,
     html: template.html ? renderString(template.html) : undefined,
   };
 };

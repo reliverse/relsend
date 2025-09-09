@@ -7,7 +7,7 @@ export interface TemplateData {
 export interface EmailTemplate {
   name: string;
   subject: string;
-  text: string;
+  text?: string;
   html?: string;
   description?: string;
   variables?: string[];
@@ -17,7 +17,7 @@ export interface EmailTemplate {
 export interface TSXEmailTemplate {
   name: string;
   subject: string;
-  text: string;
+  text?: string;
   component: ComponentType<TemplateData>;
   description?: string;
   variables?: string[];
@@ -37,9 +37,14 @@ export type TemplateRenderer = (
   tailwindMode?: "v3" | "v4" | "off",
 ) => Promise<{
   subject: string;
-  text: string;
+  text?: string;
   html?: string;
 }>;
+
+export interface MultiEmailModule {
+  __relsendMulti: true;
+  schemas: AnyEmailTemplate[];
+}
 
 export function isTSXTemplate(template: AnyEmailTemplate): template is TSXEmailTemplate {
   return "component" in template;

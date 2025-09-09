@@ -1,7 +1,8 @@
 import { readdir } from "fs/promises";
 import { join } from "path";
+import type { ComponentType } from "react";
 import { extractTSXVariables } from "./tsx-renderer";
-import type { AnyEmailTemplate } from "./types";
+import type { AnyEmailTemplate, MultiEmailModule, TemplateData, TSXEmailTemplate } from "./types";
 import { isTSXTemplate } from "./types";
 
 const TEMPLATES_DIR = join(process.cwd(), "emails");
@@ -46,11 +47,110 @@ export async function loadTemplate(name: string): Promise<AnyEmailTemplate | nul
   // Try to load .tsx first, then .ts
   const extensions = [".tsx", ".ts"];
 
+  // If the requested name looks like a numbered variant (e.g., base-2),
+  // attempt to resolve it from a multi-template module named `base` first.
+  const variantMatch = name.match(/^(.*)-(\d+)$/);
+  if (variantMatch) {
+    const base = variantMatch[1] || "";
+    const numStr = variantMatch[2] || "";
+    const zeroBasedIndex = Math.max(0, Number.parseInt(numStr, 10) - 1);
+    for (const ext of extensions) {
+      try {
+        const basePath = join(TEMPLATES_DIR, `${base}${ext}`);
+        const mod = await import(basePath);
+        const multi = (mod as { default?: unknown }).default as MultiEmailModule | undefined;
+        if (multi && typeof multi === "object" && multi.__relsendMulti === true) {
+          // 1) Try exact name match
+          const pickedByName = multi.schemas.find((s) => s.name === name);
+          if (pickedByName) return pickedByName;
+          // 2) Fallback to index-based selection: base-N maps to schemas[N-1]
+          const pickedByIndex = multi.schemas[zeroBasedIndex];
+          if (pickedByIndex) return pickedByIndex;
+        }
+      } catch {
+        // continue
+      }
+    }
+  }
+
   for (const ext of extensions) {
     try {
       const templatePath = join(TEMPLATES_DIR, `${name}${ext}`);
       const templateModule = await import(templatePath);
-      return templateModule.default || templateModule.template;
+      // 0) Multi-template module support (return the first schema as a sentinel)
+      const multi = (templateModule as { default?: unknown }).default as
+        | MultiEmailModule
+        | undefined;
+      if (
+        multi &&
+        typeof multi === "object" &&
+        (multi as MultiEmailModule).__relsendMulti === true
+      ) {
+        // Pick a schema to return deterministically (first schema) - the caller
+        // in send flow will treat this as a signal that variants exist and will
+        // resolve a specific variant later.
+        const first = (multi as MultiEmailModule).schemas[0];
+        if (first) return first;
+      }
+      // 1) Back-compat and new helper: accept default export, named `template`, or named `email`
+      const direct =
+        (templateModule as { default?: AnyEmailTemplate }).default ||
+        (templateModule as { template?: AnyEmailTemplate }).template ||
+        (templateModule as { email?: AnyEmailTemplate }).email;
+      if (direct) return direct;
+
+      // 2) New convention: build from component + meta without exporting a full template object
+      //    - default export (or named `component`) is a React component
+      //    - named export `meta` (or `templateMeta`) contains name, subject, text, etc.
+      const component =
+        (templateModule as { default?: unknown; component?: unknown }).default ||
+        (templateModule as { default?: unknown; component?: unknown }).component;
+      const meta =
+        (templateModule as { meta?: unknown; templateMeta?: unknown }).meta ||
+        (templateModule as { meta?: unknown; templateMeta?: unknown }).templateMeta;
+
+      if (component && meta && typeof meta === "object") {
+        const m = meta as Partial<AnyEmailTemplate> & {
+          name?: string;
+          subject?: string;
+          text?: string;
+        };
+        if (m?.name && m?.subject) {
+          // If a component exists, prefer TSX template shape
+          const built: TSXEmailTemplate = {
+            name: m.name,
+            subject: m.subject,
+            text: m.text,
+            description: (m as { description?: string }).description,
+            variables: (m as { variables?: string[] }).variables,
+            defaultData: (m as { defaultData?: Record<string, unknown> }).defaultData,
+            component: component as ComponentType<TemplateData>,
+          };
+          return built;
+        }
+      }
+
+      // 3) Fallback: string-based template via named exports only (no component)
+      //    Accept modules exporting subject/text/html and optional name/description/variables/defaultData
+      const subject = (templateModule as { subject?: unknown }).subject;
+      const text = (templateModule as { text?: unknown }).text;
+      if (typeof subject === "string" && (typeof text === "string" || text === undefined)) {
+        const html = (templateModule as { html?: unknown }).html;
+        const nameFromModule = (templateModule as { name?: unknown }).name;
+        const description = (templateModule as { description?: unknown }).description;
+        const variables = (templateModule as { variables?: unknown }).variables;
+        const defaultData = (templateModule as { defaultData?: unknown }).defaultData;
+        const built = {
+          name: typeof nameFromModule === "string" ? nameFromModule : name,
+          subject,
+          text: typeof text === "string" ? text : undefined,
+          html: typeof html === "string" ? html : undefined,
+          description: typeof description === "string" ? description : undefined,
+          variables: Array.isArray(variables) ? (variables as string[]) : undefined,
+          defaultData: (defaultData as Record<string, unknown> | undefined) ?? undefined,
+        } satisfies AnyEmailTemplate;
+        return built;
+      }
     } catch {
       // Continue to next extension
     }
@@ -71,7 +171,7 @@ export async function listTemplates(): Promise<string[]> {
         file !== "tsx-renderer.ts",
     );
 
-    // Check for duplicate templates
+    // Collect template names and detect duplicates across .ts/.tsx single-template files
     const templateNames = new Map<string, string[]>();
 
     for (const file of templateFiles) {
@@ -87,9 +187,12 @@ export async function listTemplates(): Promise<string[]> {
       }
     }
 
-    // Validate for duplicates
+    // Validate for duplicates only when both files are single-template modules.
+    // If a module is a multi-template module, we allow a single file that represents many variants.
     for (const [name, extensions] of templateNames) {
       if (extensions.length > 1) {
+        // If both files exist (.ts and .tsx), we'll still flag as duplicate because
+        // multi-template is expected to live in a single module file.
         const extensionsList = extensions.join(", ");
         throw new Error(
           `Duplicate template found: "${name}" exists in multiple formats (${extensionsList}). ` +
@@ -143,6 +246,25 @@ export async function findTemplateVariants(baseName: string): Promise<{
       }
     }
 
+    // Also check for multi-template module variants defined within a single base file
+    for (const ext of [".ts", ".tsx"]) {
+      try {
+        const basePath = join(TEMPLATES_DIR, `${baseName}${ext}`);
+        const mod = await import(basePath);
+        const multi = (mod as { default?: unknown }).default as MultiEmailModule | undefined;
+        if (multi && typeof multi === "object" && multi.__relsendMulti === true) {
+          // Build standardized variant names as base-1, base-2, ...
+          for (let i = 0; i < multi.schemas.length; i++) {
+            variants.push(`${baseName}-${i + 1}`);
+            variantNumbers.push(i + 1);
+          }
+          break;
+        }
+      } catch {
+        // ignore if file not found or not a multi module
+      }
+    }
+
     // Sort by variant number to ensure consistent ordering
     variants.sort((a, b) => {
       const aNum = Number.parseInt(a.split("-").pop() || "0", 10);
@@ -182,7 +304,7 @@ function extractVariables(template: AnyEmailTemplate): string[] {
   }
 
   // Extract from string-based template
-  const text = `${template.subject} ${template.text} ${template.html || ""}`;
+  const text = `${template.subject} ${template.text || ""} ${template.html || ""}`;
   const matches = text.match(/\{\{(\w+(?:\.\w+)*)\}\}/g);
   if (!matches) return [];
 

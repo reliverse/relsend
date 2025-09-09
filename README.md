@@ -98,6 +98,7 @@ bun relsend template list
 # Get template details and required variables
 bun relsend template info welcome
 bun relsend template info notification
+bun relsend template info newsletter
 bun relsend template info my-email
 ```
 
@@ -139,15 +140,26 @@ bun relsend send --template my-email --tailwind v4 --templateData '{"userName":"
 bun relsend send --template my-email --tailwind off --templateData '{"userName":"John","companyName":"Acme Corp"}' --to "hello-to@gmail.com"
 ```
 
-## Medical Appeal Email
+## Relsend Newsletter Templates
+
+Relsend includes built-in newsletter templates for onboarding and advanced features:
 
 ```bash
-# Using Nodemailer
-bun relsend send --template newsletter --to "hello-to@gmail.com" --from 1
+# Send onboarding email (randomly selects between onboard and advanced-details)
+bun relsend send --template newsletter --to "user@example.com" --from 1
 
 # Using Resend
-bun relsend send --provider resend --template newsletter --to "hello-to@gmail.com" --from 1
+bun relsend send --provider resend --template newsletter --to "user@example.com" --from 1
 ```
+
+### Template Details
+
+The newsletter template includes two variants:
+
+- **Onboard Email**: Welcome new users with quick start guide, key features, and setup instructions
+- **Advanced Details Email**: Comprehensive technical guide covering architecture, TypeScript templates, providers, and production best practices
+
+Both templates feature modern design with Tailwind CSS, responsive layouts, and comprehensive Relsend documentation.
 
 ### Send Simple Email (No Template)
 
@@ -402,6 +414,10 @@ Content-Transfer-Encoding: 7bit
 ## Contributors
 
 We welcome contributions! 👋
+
+**TODO**:
+
+- [ ] Add [Panda CSS](https://panda-css.com) support
 
 ## License
 

@@ -6,7 +6,7 @@ alwaysApply: true
 
 - Always use `Bun` as the package manager.  
 - Avoid barrel files as much as possible.
-- Always execute commands in `PowerShell`, not Bash.
+- Always execute commands in `PowerShell`, not Bash. Also, never use `cat`, it is not available in PowerShell.
 - Anything implemented should have zero mental overhead and be simple to understand.
 - In the monorepo, always use the `@<scope>/<package-name>` convention for package imports.  
 - Project don't contain eslint or prettier. Use `Biome` as the linter and formatter instead of ESLint or Prettier.  

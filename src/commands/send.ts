@@ -85,6 +85,16 @@ async function performSend(resolved: SendOptions): Promise<void> {
         }
       }
 
+      // Auto-enable multi-template when a multi module exists or variants are present
+      if (!resolved.multiTemplate) {
+        const variants = await findTemplateVariants(resolved.template);
+        if (variants.totalCount > 0) {
+          templateName = selectRandomTemplate(variants.variants);
+          template = await loadTemplate(templateName);
+          templateSpinner.text = `Auto-selected variant '${templateName}' (${variants.totalCount} variants found)...`;
+        }
+      }
+
       if (!template) {
         const errorMsg = resolved.multiTemplate
           ? `Template '${resolved.template}' and its variants not found`
@@ -307,8 +317,8 @@ async function performSend(resolved: SendOptions): Promise<void> {
     });
 
     if (result.success) {
-      spinner.succeed(`Email sent successfully!`);
-      console.log(JSON.stringify({ ok: true, messageId: result.messageId, provider }, null, 2));
+      spinner.succeed(`Email "${finalSubject || ""}" sent successfully to ${to}!`);
+      // console.log(JSON.stringify({ ok: true, messageId: result.messageId, provider }, null, 2));
     } else {
       spinner.fail(`Failed to send email via ${provider}: ${result.error}`);
       throw new Error(result.error);
@@ -328,7 +338,7 @@ export async function sendCommand(args: string[]): Promise<void> {
   if (requestedCsv) {
     csvPath = await resolveCsvPath(options.emailsCsv);
   } else if (!options.to) {
-    // Only fall back to default emails.csv when --to is not provided
+    // Only fall back to default relsend-emails.csv when --to is not provided
     csvPath = await resolveCsvPath(undefined);
   }
   if (csvPath) {
@@ -541,6 +551,18 @@ export async function sendCommand(args: string[]): Promise<void> {
     ...base,
   } as SendOptions;
 
+  // If a base template is provided with a direct --to, and multi-variants exist,
+  // send every variant to that single recipient.
+  if (resolved.template && resolved.to && !requestedCsv && !options.all) {
+    const variants = await findTemplateVariants(resolved.template);
+    if (variants.totalCount > 0) {
+      for (const variantName of variants.variants) {
+        await performSend({ ...resolved, template: variantName });
+      }
+      return;
+    }
+  }
+
   await performSend(resolved);
 }
 
@@ -621,7 +643,7 @@ function parseArgs(args: string[]): SendOptions {
       if (next && !next.startsWith("--")) {
         out.emailsCsv = args[++i];
       } else {
-        out.emailsCsv = "emails.csv";
+        out.emailsCsv = "relsend-emails.csv";
       }
     }
   }
@@ -762,7 +784,7 @@ async function showPreview(options: PreviewOptions): Promise<void> {
 }
 
 async function resolveCsvPath(input?: string): Promise<string | null> {
-  const path = input || "emails.csv";
+  const path = input || "relsend-emails.csv";
   try {
     await access(path, FS_CONSTANTS.F_OK);
     return path;

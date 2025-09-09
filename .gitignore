@@ -1,7 +1,3 @@
-relsend-checker.json
-/emails/
-*.csv
-
 out
 dist
 logs

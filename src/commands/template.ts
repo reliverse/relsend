@@ -76,9 +76,10 @@ export async function templateCommand(args: string[]): Promise<void> {
             variables: info.variables,
             example: {
               subject: info.template.subject,
-              text:
-                info.template.text.substring(0, 200) +
-                (info.template.text.length > 200 ? "..." : ""),
+              text: info.template.text
+                ? info.template.text.substring(0, 200) +
+                  (info.template.text.length > 200 ? "..." : "")
+                : undefined,
             },
           },
           null,
