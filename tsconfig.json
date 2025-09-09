@@ -1,18 +1,10 @@
 {
   "compilerOptions": {
     "paths": {
-      "~/*": [
-        "./src/*"
-      ],
-      "@/*": [
-        "emails/*"
-      ]
+      "~/*": ["./src/*"],
+      "@/*": ["emails/*"]
     },
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ESNext"
-    ],
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "baseUrl": ".",
     "target": "ESNext",
     "module": "preserve",
@@ -36,13 +28,6 @@
     "exactOptionalPropertyTypes": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": [
-    "src/**/*.ts",
-    "emails/**/*.ts",
-    "emails/components/**/*.tsx"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+  "include": ["src/**/*.ts", "emails/**/*.ts", "emails/components/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
 }

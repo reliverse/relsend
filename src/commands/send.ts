@@ -338,7 +338,7 @@ export async function sendCommand(args: string[]): Promise<void> {
   if (requestedCsv) {
     csvPath = await resolveCsvPath(options.emailsCsv);
   } else if (!options.to) {
-    // Only fall back to default relsend-emails.csv when --to is not provided
+    // Only fall back to default emails.csv when --to is not provided
     csvPath = await resolveCsvPath(undefined);
   }
   if (csvPath) {
@@ -643,7 +643,7 @@ function parseArgs(args: string[]): SendOptions {
       if (next && !next.startsWith("--")) {
         out.emailsCsv = args[++i];
       } else {
-        out.emailsCsv = "relsend-emails.csv";
+        out.emailsCsv = "emails.csv";
       }
     }
   }
@@ -784,7 +784,7 @@ async function showPreview(options: PreviewOptions): Promise<void> {
 }
 
 async function resolveCsvPath(input?: string): Promise<string | null> {
-  const path = input || "relsend-emails.csv";
+  const path = input || "emails.csv";
   try {
     await access(path, FS_CONSTANTS.F_OK);
     return path;

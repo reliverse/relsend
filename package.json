@@ -1,11 +1,12 @@
 {
   "name": "@reliverse/relsend",
-  "version": "1.0.3",
+  "version": "1.0.7",
   "type": "module",
-  "module": "src/index.ts",
+  "module": "src/mod.ts",
   "scripts": {
+    "emails:send": "bun relsend send --template medical-appeal --emails-csv emails.csv",
     "pub": "rse publish",
-    "relsend": "bun src/index.ts",
+    "relsend": "bun src/cli.ts",
     "latest": "bun update --latest",
     "preview": "email dev --dir emails/components",
     "check": "tsc --noEmit && biome check --write --unsafe",
@@ -14,10 +15,9 @@
   },
   "dependencies": {
     "@react-email/components": "^0.5.3",
-    "@react-email/font": "^0.0.9",
-    "@react-email/preview-server": "4.2.10",
+    "@react-email/preview-server": "4.2.11",
     "@react-email/tailwind": "^1.2.2",
-    "@reliverse/ohmymsg": "^1.0.2",
+    "@reliverse/ohmymsg": "^1.0.3",
     "@reliverse/relico": "^1.4.0",
     "@tailwindcss/cli": "^4.1.13",
     "cli-cursor": "^5.0.0",
@@ -30,7 +30,7 @@
     "pretty-ms": "^9.2.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "react-email": "4.2.10",
+    "react-email": "4.2.11",
     "resend": "^6.0.3",
     "stdin-discarder": "^0.2.2",
     "string-width": "^8.1.0",
@@ -38,7 +38,7 @@
     "tailwindcss": "4.1.13"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.2.2",
+    "@biomejs/biome": "2.2.3",
     "@reliverse/relparse": "^1.0.2",
     "@reliverse/rse": "^1.7.29",
     "@types/bun": "^1.2.21",

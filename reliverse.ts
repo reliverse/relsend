@@ -11,7 +11,7 @@ export default defineConfig({
   projectAuthor: "reliverse",
   projectDescription:
     "Modern CLI for sending emails with TypeScript template support, built with Bun. Supports multiple email providers including Nodemailer (SMTP) and Resend.",
-  version: "1.0.3",
+  version: "1.0.7",
   projectLicense: "Apache-2.0",
   projectState: "created",
   projectRepository: "unknown",
@@ -146,7 +146,7 @@ export default defineConfig({
   coreDescription: "",
   coreEntryFile: "mod.ts",
   coreEntrySrcDir: "src",
-  coreIsCLI: { enabled: true, scripts: { relsend: "src/index.ts" } },
+  coreIsCLI: { enabled: true, scripts: { relsend: "src/cli.ts" } },
 
   // JSR-only config
   distJsrAllowDirty: true,

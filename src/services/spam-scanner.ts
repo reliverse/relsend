@@ -153,7 +153,7 @@ export class SpamScannerService {
       enableMixedLanguageDetection: true,
     });
 
-    this.cachePath = join(process.cwd(), "relsend-checker.json");
+    this.cachePath = join(process.cwd(), "relsend.json");
     this.cache = this.loadCache();
   }
 
