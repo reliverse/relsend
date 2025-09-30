@@ -1484,6 +1484,7 @@ export const DEFAULT_CONFIG_RELIVERSE: ReliverseConfig = {
     },
   },
 };
-export const defineConfig = (userConfig: Partial<ReliverseConfig> = {}) => {
-  return { ...DEFAULT_CONFIG_RELIVERSE, ...userConfig };
-};
+export const defineConfig = (userConfig: Partial<ReliverseConfig> = {}) => ({
+  ...DEFAULT_CONFIG_RELIVERSE,
+  ...userConfig,
+});

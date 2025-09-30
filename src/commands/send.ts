@@ -51,7 +51,12 @@ type SendOptions = {
   apiKey?: string;
 };
 
-async function performSend(resolved: SendOptions): Promise<void> {
+type SendResult = {
+  subject: string;
+  to: string;
+};
+
+async function performSend(resolved: SendOptions): Promise<SendResult> {
   // Handle template rendering
   let finalSubject = resolved.subject;
   let finalText = resolved.text;
@@ -59,14 +64,8 @@ async function performSend(resolved: SendOptions): Promise<void> {
   let reactComponent: React.ReactElement | undefined;
 
   if (resolved.template) {
-    const templateSpinner = createSpinner({
-      text: `Loading template '${resolved.template}'...`,
-      color: "blue",
-      spinner: "dots",
-    });
-
     try {
-      templateSpinner.start();
+      // Suppress per-step spinner updates to keep a single combined message
 
       let templateName = resolved.template;
       let template = await loadTemplate(templateName);
@@ -77,11 +76,10 @@ async function performSend(resolved: SendOptions): Promise<void> {
         if (variants.totalCount > 0) {
           templateName = selectRandomTemplate(variants.variants);
           template = await loadTemplate(templateName);
-          templateSpinner.text = `Loading random template variant '${templateName}' (${variants.totalCount} variants found)...`;
+          // Intentionally no spinner text update here
         } else if (!template) {
-          // If no variants found and no base template, show error
-          templateSpinner.fail(`Template '${resolved.template}' and its variants not found`);
-          return;
+          // If no variants found and no base template, throw
+          throw new Error(`Template '${resolved.template}' not found`);
         }
       }
 
@@ -91,7 +89,7 @@ async function performSend(resolved: SendOptions): Promise<void> {
         if (variants.totalCount > 0) {
           templateName = selectRandomTemplate(variants.variants);
           template = await loadTemplate(templateName);
-          templateSpinner.text = `Auto-selected variant '${templateName}' (${variants.totalCount} variants found)...`;
+          // Intentionally no spinner text update here
         }
       }
 
@@ -99,8 +97,7 @@ async function performSend(resolved: SendOptions): Promise<void> {
         const errorMsg = resolved.multiTemplate
           ? `Template '${resolved.template}' and its variants not found`
           : `Template '${resolved.template}' not found`;
-        templateSpinner.fail(errorMsg);
-        return;
+        throw new Error(errorMsg);
       }
 
       let templateData: TemplateData = {};
@@ -108,8 +105,7 @@ async function performSend(resolved: SendOptions): Promise<void> {
         try {
           templateData = JSON.parse(resolved.templateData);
         } catch {
-          templateSpinner.fail("Invalid JSON in --templateData");
-          return;
+          throw new Error("Invalid JSON in --templateData");
         }
       }
 
@@ -130,29 +126,17 @@ async function performSend(resolved: SendOptions): Promise<void> {
         reactComponent = React.createElement(template.component, mergedData);
       }
 
-      const successMsg =
-        resolved.multiTemplate && templateName !== resolved.template
-          ? `Template variant '${templateName}' loaded and rendered (from ${resolved.template} variants)`
-          : `Template '${templateName}' loaded and rendered`;
-      templateSpinner.succeed(successMsg);
+      // Intentionally no spinner text update here
     } catch (error) {
-      templateSpinner.fail(
-        `Failed to load template: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-      throw error;
+      const message = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Failed to load template: ${message}`);
     }
   }
 
   // Spam scanning (if enabled)
   if (resolved.scan && (finalText || finalHtml || reactComponent)) {
-    const scanSpinner = createSpinner({
-      text: "Scanning email content for spam...",
-      color: "yellow",
-      spinner: "dots",
-    });
-
     try {
-      scanSpinner.start();
+      // Intentionally no spinner text update here
 
       // Create email content for scanning
       let emailContent = "";
@@ -199,7 +183,7 @@ async function performSend(resolved: SendOptions): Promise<void> {
       );
 
       if (scanResult.isSpam) {
-        scanSpinner.fail(`Spam detected: ${scanResult.message}`);
+        // Keep spinner running for higher-level control; throw error to caller
         console.error("\n❌ EMAIL BLOCKED - SPAM DETECTED");
         console.error("=".repeat(50));
         console.error(`Reason: ${scanResult.message}`);
@@ -224,14 +208,10 @@ async function performSend(resolved: SendOptions): Promise<void> {
 
         console.error("\nUse --force-scan to bypass spam detection");
         process.exit(1);
-      } else {
-        scanSpinner.succeed("Email content appears clean");
       }
     } catch (error) {
-      scanSpinner.fail(
-        `Spam scan failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-      throw error;
+      const message = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Spam scan failed: ${message}`);
     }
   }
 
@@ -245,7 +225,7 @@ async function performSend(resolved: SendOptions): Promise<void> {
       html: finalHtml,
       react: reactComponent,
     });
-    return;
+    return { subject: finalSubject || "", to: resolved.to || "" };
   }
 
   const missing: string[] = [];
@@ -282,7 +262,7 @@ async function performSend(resolved: SendOptions): Promise<void> {
     console.error(
       `Missing required options: ${missing.join(", ")}.\nUsage: bun relsend send --to a@b.com --from you@x.com --subject "Hi" --text "Hello" --host smtp.example.com --port 587 --user user --pass pass [--secure] [--html '<b>Hi</b>']`,
     );
-    return;
+    throw new Error("Missing required options");
   }
 
   // Create provider configuration
@@ -294,14 +274,8 @@ async function performSend(resolved: SendOptions): Promise<void> {
 
   const { from, to } = resolved as Required<Pick<SendOptions, "from" | "to">>;
 
-  const spinner = createSpinner({
-    text: `Sending email via ${provider}...`,
-    color: "cyan",
-    spinner: "dots",
-  });
-
   try {
-    spinner.start();
+    // spinner is managed by caller; ensure meaningful text only
 
     // Create provider instance
     const emailProvider = createProvider(providerConfig);
@@ -316,19 +290,12 @@ async function performSend(resolved: SendOptions): Promise<void> {
       react: reactComponent,
     });
 
-    if (result.success) {
-      spinner.succeed(`Email "${finalSubject || ""}" sent successfully to ${to}!`);
-      // console.log(JSON.stringify({ ok: true, messageId: result.messageId, provider }, null, 2));
-    } else {
-      spinner.fail(`Failed to send email via ${provider}: ${result.error}`);
-      throw new Error(result.error);
-    }
+    if (!result.success) throw new Error(result.error);
   } catch (error) {
-    spinner.fail(
-      `Failed to send email via ${provider}: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-    throw error;
+    const message = error instanceof Error ? error.message : "Unknown error";
+    throw new Error(`Failed to send email via ${provider}: ${message}`);
   }
+  return { subject: finalSubject || "", to };
 }
 
 export async function sendCommand(args: string[]): Promise<void> {
@@ -404,8 +371,15 @@ export async function sendCommand(args: string[]): Promise<void> {
 
     const baseDelayMs = Math.max(0, Math.floor(((options.delay ?? 2) as number) * 1000));
 
-    let total = 0;
+    const scheduled = tasks.length;
+    let sent = 0;
     const failed: string[] = [];
+
+    const progressSpinner = createSpinner({
+      text: `[0/${scheduled}] Preparing to send...`,
+      color: "cyan",
+      spinner: "dots",
+    }).start();
 
     await pMap(
       Array.from(byAccount.entries()),
@@ -413,7 +387,6 @@ export async function sendCommand(args: string[]): Promise<void> {
         let sentForAccount = 0;
         for (let i = 0; i < queue.length; i++) {
           const { to, template } = queue[i] || { to: "", template: "" };
-          total++;
           try {
             const perEmailOptions: SendOptions = {
               ...options,
@@ -424,8 +397,10 @@ export async function sendCommand(args: string[]): Promise<void> {
             const base = withEnvFallback(perEmailOptions);
             const cfg = await loadConfig();
             const resolved = { ...cfg, ...base, to } as SendOptions;
-            await performSend(resolved);
+            const { subject, to: sentTo } = await performSend(resolved);
             sentForAccount++;
+            sent++;
+            progressSpinner.text = `[${sent}/${scheduled}] Sending "${subject}" to ${sentTo}...`;
           } catch (error) {
             console.error(
               `❌ Failed to send to '${to}' from '${accountEmail}': ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -444,8 +419,9 @@ export async function sendCommand(args: string[]): Promise<void> {
       { concurrency: byAccount.size },
     );
 
+    progressSpinner.succeed(`Sent ${sent}/${scheduled} (Failed: ${failed.length})`);
     console.log("\n" + "=".repeat(50));
-    console.log(`Attempted: ${total}, Sent: ${total - failed.length}, Failed: ${failed.length}`);
+    console.log(`Attempted: ${scheduled}, Sent: ${sent}, Failed: ${failed.length}`);
     if (failed.length > 0) {
       console.log(`Failed recipients: ${failed.join(", ")}`);
       process.exitCode = 1;
@@ -493,8 +469,15 @@ export async function sendCommand(args: string[]): Promise<void> {
 
     const baseDelayMs = Math.max(0, Math.floor(((options.delay ?? 2) as number) * 1000));
 
-    let total = 0;
+    const scheduled = templates.length;
+    let sent = 0;
     const failed: string[] = [];
+
+    const progressSpinner = createSpinner({
+      text: `[0/${scheduled}] Preparing to send...`,
+      color: "cyan",
+      spinner: "dots",
+    }).start();
 
     // Run each account queue concurrently; each account enforces its own delays
     await pMap(
@@ -503,7 +486,6 @@ export async function sendCommand(args: string[]): Promise<void> {
         let sentForAccount = 0;
         for (let i = 0; i < tplList.length; i++) {
           const name = tplList[i] || "";
-          total++;
           try {
             const perEmailOptions: SendOptions = {
               ...options,
@@ -514,8 +496,10 @@ export async function sendCommand(args: string[]): Promise<void> {
             const base = withEnvFallback(perEmailOptions);
             const cfg = await loadConfig();
             const resolved = { ...cfg, ...base } as SendOptions;
-            await performSend(resolved);
+            const { subject, to: sentTo } = await performSend(resolved);
             sentForAccount++;
+            sent++;
+            progressSpinner.text = `[${sent}/${scheduled}] Sending "${subject}" to ${sentTo}...`;
           } catch (error) {
             console.error(
               `❌ Failed to send template '${name}' from '${accountEmail}': ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -535,8 +519,9 @@ export async function sendCommand(args: string[]): Promise<void> {
       { concurrency: byAccount.size },
     );
 
+    progressSpinner.succeed(`Sent ${sent}/${scheduled} (Failed: ${failed.length})`);
     console.log("\n" + "=".repeat(50));
-    console.log(`Attempted: ${total}, Sent: ${total - failed.length}, Failed: ${failed.length}`);
+    console.log(`Attempted: ${scheduled}, Sent: ${sent}, Failed: ${failed.length}`);
     if (failed.length > 0) {
       console.log(`Failed templates: ${failed.join(", ")}`);
       process.exitCode = 1;
@@ -552,18 +537,52 @@ export async function sendCommand(args: string[]): Promise<void> {
   } as SendOptions;
 
   // If a base template is provided with a direct --to, and multi-variants exist,
-  // send every variant to that single recipient.
+  // send every variant to that single recipient using one shared spinner.
   if (resolved.template && resolved.to && !requestedCsv && !options.all) {
     const variants = await findTemplateVariants(resolved.template);
     if (variants.totalCount > 0) {
-      for (const variantName of variants.variants) {
-        await performSend({ ...resolved, template: variantName });
+      const scheduled = variants.totalCount;
+      let sent = 0;
+      const spinner = createSpinner({
+        text: `[0/${scheduled}] Preparing to send...`,
+        color: "cyan",
+        spinner: "dots",
+      }).start();
+      try {
+        for (const variantName of variants.variants) {
+          const { subject, to: sentTo } = await performSend({ ...resolved, template: variantName });
+          sent++;
+          spinner.text = `[${sent}/${scheduled}] Sending "${subject}" to ${sentTo}...`;
+        }
+        spinner.succeed(`Sent ${sent}/${scheduled}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        spinner.fail(`Failed after ${sent}/${scheduled}: ${message}`);
+        throw error;
       }
       return;
     }
   }
 
-  await performSend(resolved);
+  // Single send using one spinner
+  {
+    const scheduled = 1;
+    let sent = 0;
+    const spinner = createSpinner({
+      text: `[0/${scheduled}] Preparing to send...`,
+      color: "cyan",
+      spinner: "dots",
+    }).start();
+    try {
+      const { subject, to: sentTo } = await performSend(resolved);
+      sent = 1;
+      spinner.succeed(`[${sent}/${scheduled}] Sent "${subject}" to ${sentTo}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      spinner.fail(`Failed ${sent}/${scheduled}: ${message}`);
+      throw error;
+    }
+  }
 }
 
 function parseArgs(args: string[]): SendOptions {
