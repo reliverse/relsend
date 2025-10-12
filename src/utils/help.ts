@@ -86,8 +86,12 @@ Examples:
   bun relsend send --template newsletter --multi-template true --to user@example.com --from sender@example.com
   # Send all templates from ./emails, using a random configured account per email
   bun relsend send --all true --to user@example.com
-  # With delay: 2s between emails and (delay+8s) after each 7 emails per account
-  bun relsend send --all true --delay 2 --to user@example.com
+  # With delay: random 5-10s between emails and (delay+8s) after each 7 emails per account
+  bun relsend send --all true --to user@example.com
+  # Custom delay: fixed 3s between emails
+  bun relsend send --all true --delay 3 --to user@example.com
+  # Custom delay range: random 2-5s between emails
+  bun relsend send --all true --delay 2-5 --to user@example.com
   
   # Preview email content without sending
   bun relsend send --preview --template welcome --templateData '{"userName":"John"}' --to user@example.com --from sender@example.com

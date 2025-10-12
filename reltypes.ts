@@ -1155,10 +1155,11 @@ export const DEFAULT_CONFIG_RELIVERSE: ReliverseConfig = {
   // Restart the CLI to apply your config changes
   $schema: "./schema.json",
   // General project information
-  projectName: "@reliverse/relparse",
+  projectName: "@reliverse/relsend",
   projectAuthor: "reliverse",
-  projectDescription: "Multipurpose parsing CLI (optimized for Bun users only).",
-  version: "1.0.0",
+  projectDescription:
+    "Modern CLI for sending emails with TypeScript template support, built with Bun. Supports multiple email providers including Nodemailer (SMTP) and Resend. Optimized for Bun users.",
+  version: "1.0.8",
   projectLicense: "Apache-2.0",
   // Bump version
   bumpDisable: false,

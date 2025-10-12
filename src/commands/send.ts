@@ -12,6 +12,54 @@ import { createSpinner } from "../utils/spinner/mod";
 
 const NUMBER_ONLY_REGEX = /^\d+$/;
 
+/**
+ * Parses a delay value that can be either a number or a range string (e.g., "5-10")
+ * @param delay - The delay value to parse
+ * @returns Object with min and max delay in milliseconds
+ */
+function parseDelay(delay: number | string | undefined): { min: number; max: number } {
+  const defaultMin = 5;
+  const defaultMax = 10;
+
+  if (delay === undefined) {
+    return { min: defaultMin * 1000, max: defaultMax * 1000 };
+  }
+
+  if (typeof delay === "number") {
+    const ms = Math.max(0, delay * 1000);
+    return { min: ms, max: ms };
+  }
+
+  if (typeof delay === "string") {
+    const rangeMatch = delay.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/);
+    if (rangeMatch?.[1] && rangeMatch?.[2]) {
+      const min = Math.max(0, Number.parseFloat(rangeMatch[1]) * 1000);
+      const max = Math.max(min, Number.parseFloat(rangeMatch[2]) * 1000);
+      return { min, max };
+    }
+
+    // If it's not a range, try to parse as a single number
+    const singleNumber = Number.parseFloat(delay);
+    if (!Number.isNaN(singleNumber) && singleNumber >= 0) {
+      const ms = singleNumber * 1000;
+      return { min: ms, max: ms };
+    }
+  }
+
+  // Fallback to default range
+  return { min: defaultMin * 1000, max: defaultMax * 1000 };
+}
+
+/**
+ * Generates a random delay within the specified range
+ * @param min - Minimum delay in milliseconds
+ * @param max - Maximum delay in milliseconds
+ * @returns Random delay in milliseconds
+ */
+function getRandomDelay(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 type SendOptions = {
   to?: string;
   from?: string;
@@ -24,8 +72,9 @@ type SendOptions = {
   multiTemplate?: boolean;
   // Send all templates in ./emails
   all?: boolean;
-  // Base delay (seconds) between emails when using --all (default 2s)
-  delay?: number;
+  // Base delay (seconds) between emails when using --all (default 5-10s random)
+  // Can be a number (e.g., 5) or range (e.g., "5-10")
+  delay?: number | string;
   // Optional CSV path providing recipient emails
   emailsCsv?: string;
   // Tailwind mode
@@ -369,7 +418,7 @@ export async function sendCommand(args: string[]): Promise<void> {
       else byAccount.set(t.from, [t]);
     }
 
-    const baseDelayMs = Math.max(0, Math.floor(((options.delay ?? 2) as number) * 1000));
+    const delayRange = parseDelay(options.delay);
 
     const scheduled = tasks.length;
     let sent = 0;
@@ -411,7 +460,8 @@ export async function sendCommand(args: string[]): Promise<void> {
           const isLast = i === queue.length - 1;
           if (!isLast) {
             const afterSeven = sentForAccount > 0 && sentForAccount % 7 === 0;
-            const waitMs = afterSeven ? baseDelayMs + 8000 : baseDelayMs;
+            const randomDelay = getRandomDelay(delayRange.min, delayRange.max);
+            const waitMs = afterSeven ? randomDelay + 8000 : randomDelay;
             if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
           }
         }
@@ -467,7 +517,7 @@ export async function sendCommand(args: string[]): Promise<void> {
       else byAccount.set(acct, [tpl]);
     }
 
-    const baseDelayMs = Math.max(0, Math.floor(((options.delay ?? 2) as number) * 1000));
+    const delayRange = parseDelay(options.delay);
 
     const scheduled = templates.length;
     let sent = 0;
@@ -511,7 +561,8 @@ export async function sendCommand(args: string[]): Promise<void> {
           const isLast = i === tplList.length - 1;
           if (!isLast) {
             const afterSeven = sentForAccount > 0 && sentForAccount % 7 === 0;
-            const waitMs = afterSeven ? baseDelayMs + 8000 : baseDelayMs;
+            const randomDelay = getRandomDelay(delayRange.min, delayRange.max);
+            const waitMs = afterSeven ? randomDelay + 8000 : randomDelay;
             if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
           }
         }
@@ -655,8 +706,16 @@ function parseArgs(args: string[]): SendOptions {
         out.all = true;
       }
     } else if (a === "--delay" && args[i + 1]) {
-      const n = Number(args[++i]);
-      if (Number.isFinite(n) && n >= 0) out.delay = n;
+      const delayValue = args[++i];
+      if (delayValue) {
+        // Support both numbers and range strings (e.g., "5-10")
+        if (delayValue.includes("-")) {
+          out.delay = delayValue;
+        } else {
+          const n = Number(delayValue);
+          if (Number.isFinite(n) && n >= 0) out.delay = n;
+        }
+      }
     } else if (a === "--emails-csv") {
       const next = args[i + 1];
       if (next && !next.startsWith("--")) {
