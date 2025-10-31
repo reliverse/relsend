@@ -13,6 +13,31 @@ import { createSpinner } from "../utils/spinner/mod";
 const NUMBER_ONLY_REGEX = /^\d+$/;
 
 /**
+ * Parses RELSEND_USER_CONF_<INDEX> format: "host,port,secure,type"
+ * @param confString - The configuration string to parse
+ * @returns Parsed configuration or null if invalid
+ */
+function parseUserConf(
+  confString: string | undefined,
+): { host: string; port: number; secure: boolean; authType: "password" | "oauth2" } | null {
+  if (!confString) return null;
+
+  const parts = confString.split(",").map((p) => p.trim());
+  if (parts.length !== 4) return null;
+
+  const [host, portStr, secureStr, authTypeStr] = parts;
+  if (!host || !portStr) return null;
+
+  const port = Number.parseInt(portStr, 10);
+  if (!Number.isFinite(port) || port <= 0) return null;
+
+  const secure = secureStr === "true" || secureStr === "1";
+  const authType = authTypeStr === "oauth2" ? "oauth2" : "password";
+
+  return { host, port, secure, authType };
+}
+
+/**
  * Parses a delay value that can be either a number or a range string (e.g., "5-10")
  * @param delay - The delay value to parse
  * @returns Object with min and max delay in milliseconds
@@ -736,10 +761,22 @@ function withEnvFallback(o: SendOptions): SendOptions {
   const env = process.env as Record<string, string | undefined>;
   // Multi-account resolution
   const accounts: Array<{ index: number; user: string; pass?: string }> = [];
+  const accountConfigs = new Map<
+    number,
+    { host: string; port: number; secure: boolean; authType: "password" | "oauth2" }
+  >();
+
   for (let idx = 1; idx <= 10; idx++) {
     const user = env[`RELSEND_USER_NAME_${idx}`];
     const pass = env[`RELSEND_USER_PASS_${idx}`];
-    if (user) accounts.push({ index: idx, user, pass });
+    if (user) {
+      accounts.push({ index: idx, user, pass });
+      // Parse per-account config if provided
+      const userConf = parseUserConf(env[`RELSEND_USER_CONF_${idx}`]);
+      if (userConf) {
+        accountConfigs.set(idx, userConf);
+      }
+    }
   }
 
   // Validate and resolve --from (skip validation in preview mode):
@@ -789,24 +826,62 @@ function withEnvFallback(o: SendOptions): SendOptions {
   // Choose credentials based on resolvedFrom if not explicitly provided
   let resolvedUser = o.user;
   let resolvedPass = o.pass;
+  let resolvedAccountIndex: number | undefined;
   if (!resolvedUser && resolvedFrom && accounts.length > 0) {
     const acct = accounts.find((a) => a.user === resolvedFrom);
     if (acct) {
       resolvedUser = acct.user;
       resolvedPass = resolvedPass ?? acct.pass;
+      resolvedAccountIndex = acct.index;
+    }
+  } else if (resolvedFrom) {
+    // Also check if --from was an index or matches an account
+    const fromIsIndex = NUMBER_ONLY_REGEX.test(resolvedFrom);
+    if (fromIsIndex) {
+      const idx = Number(resolvedFrom);
+      const acct = accounts.find((a) => a.index === idx);
+      if (acct) resolvedAccountIndex = idx;
+    } else {
+      const acct = accounts.find((a) => a.user === resolvedFrom);
+      if (acct) resolvedAccountIndex = acct.index;
     }
   }
+
+  // Apply per-account SMTP config if available, otherwise fallback to global settings
+  let resolvedHost = o.host;
+  let resolvedPort = o.port;
+  let resolvedSecure = o.secure;
+  let resolvedAuthType = o.authType;
+
+  if (resolvedAccountIndex !== undefined && accountConfigs.has(resolvedAccountIndex)) {
+    const accountConf = accountConfigs.get(resolvedAccountIndex);
+    if (accountConf) {
+      // Only apply if not explicitly overridden by command-line flags
+      resolvedHost = resolvedHost ?? accountConf.host;
+      resolvedPort = resolvedPort ?? accountConf.port;
+      resolvedSecure = resolvedSecure ?? accountConf.secure;
+      resolvedAuthType = resolvedAuthType ?? accountConf.authType;
+    }
+  }
+
+  // Fallback to global settings if not set
+  resolvedHost = resolvedHost ?? env.RELSEND_HOST;
+  resolvedPort = resolvedPort ?? (env.RELSEND_PORT ? Number(env.RELSEND_PORT) : undefined);
+  resolvedSecure =
+    resolvedSecure ?? (env.RELSEND_SECURE ? env.RELSEND_SECURE === "true" : undefined);
+  resolvedAuthType =
+    resolvedAuthType ?? (env.RELSEND_AUTH_TYPE as "password" | "oauth2" | undefined);
 
   return {
     ...o,
     provider: o.provider ?? (env.RELSEND_PROVIDER as ProviderType | undefined),
-    host: o.host ?? env.RELSEND_HOST,
-    port: o.port ?? (env.RELSEND_PORT ? Number(env.RELSEND_PORT) : undefined),
-    secure: o.secure ?? (env.RELSEND_SECURE ? env.RELSEND_SECURE === "true" : undefined),
+    host: resolvedHost,
+    port: resolvedPort,
+    secure: resolvedSecure,
     user: resolvedUser,
     pass: resolvedPass,
     from: resolvedFrom,
-    authType: o.authType ?? (env.RELSEND_AUTH_TYPE as "password" | "oauth2" | undefined),
+    authType: resolvedAuthType,
     clientId: o.clientId ?? env.RELSEND_CLIENT_ID,
     clientSecret: o.clientSecret ?? env.RELSEND_CLIENT_SECRET,
     refreshToken: o.refreshToken ?? env.RELSEND_REFRESH_TOKEN,

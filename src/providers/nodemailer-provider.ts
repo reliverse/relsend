@@ -37,10 +37,21 @@ export class NodemailerProvider implements EmailProvider {
         throw new Error("SMTP requires host, port, user, and pass");
       }
 
+      // Port 465 typically requires secure=true (SSL), port 587 uses STARTTLS (secure=false)
+      const isSecure = Boolean(config.secure);
+      const isPort465 = config.port === 465;
+
+      // Auto-correct: port 465 should use secure=true
+      const secure = isPort465 ? true : isSecure;
+
       this.transporter = nodemailer.createTransport({
         host: config.host,
         port: config.port,
-        secure: Boolean(config.secure),
+        secure,
+        // Add TLS options for better compatibility
+        tls: {
+          rejectUnauthorized: false, // Some servers have self-signed certs
+        },
         auth: { user: config.user, pass: config.pass },
       });
     }

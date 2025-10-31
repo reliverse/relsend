@@ -38,6 +38,7 @@ Send options:
   Multi-account (env):
   RELSEND_USER_NAME_<i>     SMTP username/email for account index i (1..10)
   RELSEND_USER_PASS_<i>     SMTP password/app password for account index i
+  RELSEND_USER_CONF_<i>     Per-account SMTP config: "host,port,secure,type" (optional, falls back to global RELSEND_HOST/PORT/SECURE/AUTH_TYPE)
 
   From selection:
   --from <email>            Must match one of RELSEND_USER_NAME_<i>
@@ -54,11 +55,18 @@ Send options:
  
 
 Examples:
-  # Configure two accounts via env
+  # Configure two accounts via env (using global SMTP settings)
   RELSEND_HOST=smtp.example.com RELSEND_PORT=587 \\
   RELSEND_USER_NAME_1=you@example.com RELSEND_USER_PASS_1=pass1 \\
   RELSEND_USER_NAME_2=sales@example.com RELSEND_USER_PASS_2=pass2 \\
     bun relsend send --from 1 --to me@example.com --subject "Hi" --text "Hello"
+  
+  # Configure accounts with different SMTP servers
+  RELSEND_USER_NAME_1=user@gmail.com RELSEND_USER_PASS_1=gmail-pass \\
+  RELSEND_USER_CONF_1="smtp.gmail.com,587,false,password" \\
+  RELSEND_USER_NAME_2=user@example.com RELSEND_USER_PASS_2=example-pass \\
+  RELSEND_USER_CONF_2="smtp.example.com,465,true,password" \\
+    bun relsend send --from 1 --to recipient@example.com --subject "Hi" --text "Hello"
   
   # Nodemailer - Gmail with App Password (requires 2-Step Verification)
   bun relsend send --provider nodemailer --host smtp.gmail.com --port 587 --secure --user me@gmail.com --pass "app-password" \\

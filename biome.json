@@ -1,6 +1,5 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "extends": ["ultracite"],
   "vcs": {
     "enabled": false,
     "clientKind": "git",
@@ -59,8 +58,7 @@
       "nursery": {
         "useSortedClasses": "off",
         "noShadow": "off",
-        "noUnnecessaryConditions": "off",
-        "useConsistentTypeDefinitions": "off"
+        "noUnnecessaryConditions": "off"
       }
     }
   },

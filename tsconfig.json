@@ -28,11 +28,6 @@
     "exactOptionalPropertyTypes": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": [
-    "src/**/*.ts",
-    "emails/**/*.ts",
-    "emails/components/**/*.tsx",
-    "emails/config.ts"
-  ],
+  "include": ["src/**/*.ts", "emails/**/*.ts", "emails/components/**/*.tsx", "emails/config.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -64,6 +64,11 @@ RELSEND_USER_PASS_1=your-16-char-app-password
 # RELSEND_USER_NAME_2=notifications@yourdomain.com
 # RELSEND_USER_PASS_2=app-password-2
 
+# Per-account SMTP configuration (optional - falls back to global RELSEND_HOST/PORT/SECURE/AUTH_TYPE if not provided)
+# Format: "host,port,secure,authType"
+# RELSEND_USER_CONF_1="smtp.gmail.com,587,false,password"
+# RELSEND_USER_CONF_2="smtp.example.com,465,true,password"
+
 # [Auth Type]: OAuth2 Configuration
 # RELSEND_AUTH_TYPE=oauth2
 # RELSEND_CLIENT_ID=your-oauth-client-id
@@ -200,12 +205,13 @@ Relsend uses the following environment variables for configuration:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `RELSEND_HOST` | SMTP server hostname | `smtp.gmail.com` |
-| `RELSEND_PORT` | SMTP server port | `587` |
-| `RELSEND_SECURE` | Use SSL/TLS connection | `false` |
+| `RELSEND_HOST` | SMTP server hostname (global fallback) | `smtp.gmail.com` |
+| `RELSEND_PORT` | SMTP server port (global fallback) | `587` |
+| `RELSEND_SECURE` | Use SSL/TLS connection (global fallback) | `false` |
 | `RELSEND_USER_NAME_<i>` | Account email for index i (1..10) | `your-email@gmail.com` |
 | `RELSEND_USER_PASS_<i>` | Account password/app password | `your-app-password` |
-| `RELSEND_AUTH_TYPE` | Authentication type | `password` or `oauth2` |
+| `RELSEND_USER_CONF_<i>` | Per-account SMTP config: "host,port,secure,authType" (optional) | `"smtp.gmail.com,587,false,password"` |
+| `RELSEND_AUTH_TYPE` | Authentication type (global fallback) | `password` or `oauth2` |
 | `RELSEND_CLIENT_ID` | OAuth2 client ID | `your-oauth-client-id` |
 | `RELSEND_CLIENT_SECRET` | OAuth2 client secret | `your-oauth-client-secret` |
 | `RELSEND_REFRESH_TOKEN` | OAuth2 refresh token | `your-oauth-refresh-token` |
